@@ -1,0 +1,32 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BillkaatReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*",
+        "elasticloadbalancing:Describe*",
+        "cloudwatch:GetMetricData",
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:ListMetrics",
+        "sts:GetCallerIdentity",
+        "rds:Describe*",
+        "logs:DescribeLogGroups",
+        "dynamodb:DescribeTable",
+        "dynamodb:ListTables",
+        "lambda:ListFunctions",
+        "s3:GetBucketLifecycleConfiguration",
+        "s3:GetBucketLocation",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:ListAllMyBuckets",
+        "iam:GetAccountSummary",
+        "iam:ListUsers",
+        "iam:ListAccessKeys",
+        "iam:GetAccessKeyLastUsed",
+        "iam:ListMFADevices"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

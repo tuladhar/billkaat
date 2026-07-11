@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>billkaat — cut your AWS bill</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230D1220'/%3E%3Cpath d='M7 22 L25 10' stroke='%23E5484D' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">billkaat<span class="kaat">काट</span></div>
+  <div class="top-actions">
+    <label class="region-picker">
+      <span class="microlabel">region</span>
+      <select id="region" aria-label="AWS region"></select>
+    </label>
+    <button id="license-badge" class="badge" type="button">COMMUNITY</button>
+  </div>
+</header>
+
+<main>
+  <section class="scan-panel">
+    <div class="meter">
+      <div class="microlabel">potential monthly savings found</div>
+      <div class="meter-value"><span id="meter">$0</span><span class="per">/mo</span></div>
+      <div class="meter-sub" id="meter-sub">Run a health check to see what this account is leaking.</div>
+    </div>
+    <div class="scan-actions">
+      <button id="run" class="btn btn-primary" type="button">Run health check</button>
+      <button id="export" class="btn btn-ghost" type="button" hidden>Export CSV</button>
+      <div class="identity microlabel" id="identity"></div>
+    </div>
+    <div class="banner banner-error" id="scan-error" hidden></div>
+  </section>
+
+  <section class="ledger">
+    <div class="ledger-header">
+      <h2>Checks</h2>
+      <span class="microlabel" id="ledger-count"></span>
+    </div>
+    <div id="checks"></div>
+  </section>
+
+  <section class="pro-cta" id="pro-cta" hidden>
+    <div>
+      <h3>Unlock <span id="pro-count"></span> more checks</h3>
+      <p>EC2 &amp; RDS rightsizing, idle NAT gateways, IAM hygiene, Savings&nbsp;Plan gaps and more.
+         One-time license, free updates, still 100% local.</p>
+    </div>
+    <button class="btn btn-crimson" id="pro-unlock" type="button">Enter license key</button>
+  </section>
+
+  <section class="history">
+    <div class="ledger-header"><h2>Past scans</h2></div>
+    <div id="history" class="history-list"></div>
+  </section>
+</main>
+
+<footer class="microlabel">
+  local-only <span class="dot">·</span> read-only AWS access <span class="dot">·</span> nothing leaves this machine
+</footer>
+
+<div class="modal-backdrop" id="license-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="lic-title">
+    <h3 id="lic-title">Activate Pro license</h3>
+    <p class="modal-sub">Paste the license key from your purchase email.
+       Verification happens offline — the key is checked on this machine and stored in your local database.</p>
+    <textarea id="license-key" rows="4" spellcheck="false" autocomplete="off"
+      placeholder="eyJ2IjoxLCJpZCI6…"></textarea>
+    <div class="banner banner-error" id="license-error" hidden></div>
+    <div class="banner banner-ok" id="license-ok" hidden></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="lic-cancel" type="button">Close</button>
+      <button class="btn btn-crimson" id="lic-activate" type="button">Activate</button>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
