@@ -9,7 +9,7 @@ import (
 // (and screenshotted for the landing page) without AWS credentials.
 // Run with: billkaat -demo
 func SeedDemo(st *store.Store) (int64, error) {
-	id, err := st.CreateScan("ap-south-1")
+	id, err := st.CreateScan("ap-south-1", "Demo Account")
 	if err != nil {
 		return 0, err
 	}

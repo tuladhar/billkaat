@@ -24,6 +24,9 @@ import (
 //go:embed all:web
 var webFS embed.FS
 
+//go:embed iam-policy.json
+var iamPolicyJSON []byte
+
 func main() {
 	var (
 		addr    = flag.String("addr", "127.0.0.1:4141", "listen address (keep it on localhost)")
@@ -54,14 +57,15 @@ func main() {
 		log.Fatal(err)
 	}
 
-	srv := &server.Server{Store: st, Engine: eng, Web: web}
+	srv := &server.Server{Store: st, Engine: eng, Web: web, IAMPolicy: string(iamPolicyJSON)}
 
 	fmt.Printf(`
   billkaat %s (%s edition)
   ─────────────────────────────────────────────
   →  http://%s
   data stays on this machine — nothing is sent anywhere.
-  read-only AWS access; see iam-policy.json for the exact permissions.
+  read-only AWS access; the required IAM policy is shown in the UI.
+  first visit: create a local username/password, then add an AWS account.
 
 `, buildinfo.Version, buildinfo.Edition, *addr)
 

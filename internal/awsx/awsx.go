@@ -9,11 +9,20 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
+
+// Credentials is the static access key pair for one saved AWS account. The
+// tool no longer reads AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY from the
+// environment — every scan is tied to an account the user added in the UI.
+type Credentials struct {
+	AccessKeyID     string
+	SecretAccessKey string
+}
 
 // Clients bundles the service clients checks are allowed to use.
 type Clients struct {
@@ -25,10 +34,16 @@ type Clients struct {
 	STS    *sts.Client
 }
 
-// New loads credentials from the default chain (env vars, ~/.aws, SSO, IMDS)
-// and builds clients for the given region.
-func New(ctx context.Context, region string) (*Clients, error) {
-	opts := []func(*config.LoadOptions) error{}
+// New builds clients for the given region using the static credentials of a
+// saved AWS account.
+func New(ctx context.Context, region string, creds Credentials) (*Clients, error) {
+	if creds.AccessKeyID == "" || creds.SecretAccessKey == "" {
+		return nil, fmt.Errorf("no AWS account selected")
+	}
+	opts := []func(*config.LoadOptions) error{
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+			creds.AccessKeyID, creds.SecretAccessKey, "")),
+	}
 	if region != "" {
 		opts = append(opts, config.WithRegion(region))
 	}

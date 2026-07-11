@@ -20,16 +20,19 @@ type Engine struct {
 }
 
 // StartScan creates the scan row and launches the run in the background.
-func (e *Engine) StartScan(region string) (int64, error) {
-	id, err := e.Store.CreateScan(region)
+// creds is the already-decrypted access key pair for accountLabel — the
+// plaintext secret lives only in this goroutine's memory for the scan's
+// duration and is never written to disk.
+func (e *Engine) StartScan(region, accountLabel string, creds awsx.Credentials) (int64, error) {
+	id, err := e.Store.CreateScan(region, accountLabel)
 	if err != nil {
 		return 0, err
 	}
-	go e.run(id, region)
+	go e.run(id, region, creds)
 	return id, nil
 }
 
-func (e *Engine) run(scanID int64, region string) {
+func (e *Engine) run(scanID int64, region string, creds awsx.Credentials) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
@@ -42,7 +45,7 @@ func (e *Engine) run(scanID int64, region string) {
 		_ = e.Store.InitCheck(scanID, c.Meta().ID, st)
 	}
 
-	clients, err := awsx.New(ctx, region)
+	clients, err := awsx.New(ctx, region, creds)
 	if err != nil {
 		_ = e.Store.FailScan(scanID, friendlyAWSError(err))
 		return
@@ -139,10 +142,10 @@ func friendlyAWSError(err error) string {
 	case strings.Contains(lower, "no ec2 imds role found"),
 		strings.Contains(lower, "failed to retrieve credentials"),
 		strings.Contains(lower, "static credentials are empty"),
+		strings.Contains(lower, "no aws account selected"),
 		strings.Contains(lower, "get identity: get credentials"):
-		return msg + " — no AWS credentials found. Set AWS_ACCESS_KEY_ID and " +
-			"AWS_SECRET_ACCESS_KEY (or configure ~/.aws/credentials), using an IAM " +
-			"user with the read-only policy from iam-policy.json."
+		return msg + " — add an AWS account in the UI, using an IAM user with the " +
+			"read-only policy shown there (also in iam-policy.json)."
 	case strings.Contains(lower, "unauthorizedoperation"),
 		strings.Contains(lower, "accessdenied"):
 		return msg + " — the credentials work but are missing a read permission. " +

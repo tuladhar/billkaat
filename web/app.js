@@ -6,6 +6,8 @@ const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matc
 
 const state = {
   meta: null,
+  accounts: [],
+  authMode: null,
   scanId: null,
   pollTimer: null,
   openFindings: new Set(), // check ids whose findings are expanded
@@ -31,6 +33,9 @@ function money(v, decimals = 2) {
 async function api(path, opts) {
   const res = await fetch(path, opts);
   const body = await res.json().catch(() => ({}));
+  if (res.status === 401 && !path.startsWith("/api/auth/")) {
+    showAuth("login");
+  }
   if (!res.ok) throw new Error(body.error || res.statusText);
   return body;
 }
@@ -68,7 +73,7 @@ const CHIP = {
   running: () => `<div class="chip running"><span class="spinner"></span>run</div>`,
   passed:  () => `<div class="chip passed">pass</div>`,
   flagged: (n) => `<div class="chip flagged">${n} found</div>`,
-  locked:  () => `<div class="chip pro">pro</div>`,
+  locked:  () => `<div class="chip soon">soon</div>`,
   error:   () => `<div class="chip error">err</div>`,
 };
 
@@ -89,7 +94,7 @@ function renderChecks(detail) {
       lastTier = m.tier;
       const label = m.tier === "free"
         ? "included in every build"
-        : "pro — one-time license, free updates";
+        : "coming in a future update";
       rows.push(`<div class="tier-rule microlabel">${label}</div>`);
     }
     const st = byId[m.id] || { status: m.locked ? "locked" : "idle" };
@@ -107,13 +112,13 @@ function renderChecks(detail) {
       : `<div class="check-savings zero">${m.locked ? "◇" : "—"}</div>`;
 
     const fs = findingsByCheck[m.id] || [];
-    const clickable = m.locked || fs.length > 0;
+    const clickable = fs.length > 0;
     const err = st.status === "error"
       ? `<div class="check-err">${esc(st.error)}</div>` : "";
 
     rows.push(`
       <div class="check-row ${m.locked ? "locked" : ""} ${clickable ? "clickable" : ""}"
-           data-check="${esc(m.id)}" data-locked="${m.locked ? 1 : 0}"
+           data-check="${esc(m.id)}"
            role="${clickable ? "button" : ""}" ${clickable ? 'tabindex="0"' : ""}>
         ${chip}
         <div class="check-main">
@@ -150,17 +155,15 @@ function renderFinding(f) {
 }
 
 $("checks").addEventListener("click", (e) => {
-  const row = e.target.closest(".check-row");
+  const row = e.target.closest(".check-row.clickable");
   if (!row) return;
-  if (row.dataset.locked === "1") { openLicenseModal(); return; }
   toggleFindings(row.dataset.check);
 });
 $("checks").addEventListener("keydown", (e) => {
   if (e.key !== "Enter" && e.key !== " ") return;
-  const row = e.target.closest(".check-row");
+  const row = e.target.closest(".check-row.clickable");
   if (!row) return;
   e.preventDefault();
-  if (row.dataset.locked === "1") { openLicenseModal(); return; }
   toggleFindings(row.dataset.check);
 });
 
@@ -179,7 +182,10 @@ async function startScan() {
     const body = await api("/api/scan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ region: $("region").value }),
+      body: JSON.stringify({
+        region: $("region").value,
+        account_id: Number($("account").value),
+      }),
     });
     attachToScan(body.scan_id);
   } catch (err) {
@@ -232,7 +238,9 @@ async function refreshScan() {
     return;
   }
 
-  const acct = detail.scan.account_id ? ` · account ${detail.scan.account_id}` : "";
+  const acct = detail.scan.account_label
+    ? ` · ${detail.scan.account_label}${detail.scan.account_id ? " (" + detail.scan.account_id + ")" : ""}`
+    : detail.scan.account_id ? ` · account ${detail.scan.account_id}` : "";
   $("meter-sub").textContent =
     `${detail.scan.findings_count} findings in ${detail.scan.region}${acct} — click a row for details.`;
   $("export").hidden = detail.scan.findings_count === 0;
@@ -266,10 +274,11 @@ async function loadHistory() {
       : s.status === "running"
         ? `<span class="history-meta">running…</span>`
         : `<span class="history-savings">${money(s.total_savings)}/mo</span>`;
+    const label = s.account_label ? esc(s.account_label) : (s.account_id ? esc(s.account_id) : "");
     return `
       <div class="history-row" data-id="${s.id}" role="button" tabindex="0">
         <span class="history-when">${esc(when)}</span>
-        <span class="history-meta">${esc(s.region)}${s.account_id ? " · " + esc(s.account_id) : ""} · ${s.findings_count} findings</span>
+        <span class="history-meta">${esc(s.region)}${label ? " · " + label : ""} · ${s.findings_count} findings</span>
         ${right}
       </div>`;
   }).join("");
@@ -289,68 +298,188 @@ $("history").addEventListener("keydown", (e) => {
 /* ---------- identity ---------- */
 
 async function loadIdentity() {
+  const accountId = $("account").value;
+  if (!accountId) { $("identity").textContent = ""; return; }
   try {
-    const id = await api(`/api/identity?region=${encodeURIComponent($("region").value)}`);
+    const id = await api(`/api/identity?region=${encodeURIComponent($("region").value)}` +
+      `&account=${encodeURIComponent(accountId)}`);
     $("identity").textContent = `account ${id.account}`;
     $("identity").title = id.arn;
   } catch {
-    $("identity").textContent = "aws credentials not detected";
+    $("identity").textContent = "could not verify credentials for this account";
   }
 }
 
-/* ---------- license ---------- */
+/* ---------- AWS accounts ---------- */
 
-function renderLicenseBadge() {
-  const lic = state.meta.license || {};
-  const badge = $("license-badge");
-  if (lic.valid) {
-    badge.textContent = state.meta.pro_build ? "PRO" : "PRO LICENSE";
-    badge.classList.add("pro");
-  } else {
-    badge.textContent = state.meta.edition.toUpperCase();
-    badge.classList.remove("pro");
+function renderAccountPicker() {
+  const sel = $("account");
+  const prev = sel.value;
+  sel.innerHTML = "";
+  if (!state.accounts.length) {
+    const o = document.createElement("option");
+    o.value = "";
+    o.textContent = "no accounts added yet";
+    sel.appendChild(o);
+    sel.disabled = true;
+    $("run").disabled = true;
+    return;
   }
-  const lockedCount = state.meta.checks.filter((c) => c.locked).length;
-  $("pro-count").textContent = lockedCount;
-  $("pro-cta").hidden = lic.valid || lockedCount === 0;
+  sel.disabled = false;
+  for (const a of state.accounts) {
+    const o = document.createElement("option");
+    o.value = a.id;
+    o.textContent = a.name + (a.account_id ? ` (${a.account_id})` : "");
+    sel.appendChild(o);
+  }
+  sel.value = state.accounts.some((a) => String(a.id) === prev) ? prev : state.accounts[0].id;
+  $("run").disabled = false;
 }
 
-function openLicenseModal() {
-  $("license-error").hidden = true;
-  $("license-ok").hidden = true;
-  $("license-modal").hidden = false;
-  $("license-key").focus();
+async function loadAccounts() {
+  state.accounts = await api("/api/accounts");
+  renderAccountPicker();
 }
-function closeLicenseModal() { $("license-modal").hidden = true; }
 
-$("license-badge").addEventListener("click", openLicenseModal);
-$("pro-unlock").addEventListener("click", openLicenseModal);
-$("lic-cancel").addEventListener("click", closeLicenseModal);
-$("license-modal").addEventListener("click", (e) => {
-  if (e.target === $("license-modal")) closeLicenseModal();
+function renderAccountsList() {
+  const el = $("accounts-list");
+  if (!state.accounts.length) {
+    el.innerHTML = `<div class="history-empty">No AWS accounts yet — add one below.</div>`;
+    return;
+  }
+  el.innerHTML = state.accounts.map((a) => `
+    <div class="account-row" data-id="${a.id}">
+      <div>
+        <div class="check-name">${esc(a.name)}</div>
+        <div class="check-desc">${esc(a.account_id || "—")} · key ${esc(a.access_key_id)}</div>
+      </div>
+      <button class="btn btn-ghost btn-small acct-delete" type="button" data-id="${a.id}">Remove</button>
+    </div>`).join("");
+}
+
+async function openAccountsModal() {
+  $("acct-error").hidden = true;
+  $("acct-name").value = "";
+  $("acct-account-id").value = "";
+  $("acct-access-key").value = "";
+  $("acct-secret-key").value = "";
+  renderAccountsList();
+  if (!$("iam-policy-text").textContent) {
+    try {
+      const res = await api("/api/iam-policy");
+      $("iam-policy-text").textContent = res.policy;
+    } catch { /* shown blank, non-fatal */ }
+  }
+  $("accounts-modal").hidden = false;
+}
+function closeAccountsModal() { $("accounts-modal").hidden = true; }
+
+$("manage-accounts").addEventListener("click", openAccountsModal);
+$("acct-cancel").addEventListener("click", closeAccountsModal);
+$("accounts-modal").addEventListener("click", (e) => {
+  if (e.target === $("accounts-modal")) closeAccountsModal();
 });
 
-$("lic-activate").addEventListener("click", async () => {
-  $("license-error").hidden = true;
-  $("license-ok").hidden = true;
+$("accounts-list").addEventListener("click", async (e) => {
+  const btn = e.target.closest(".acct-delete");
+  if (!btn) return;
   try {
-    const res = await api("/api/license", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key: $("license-key").value }),
-    });
-    const ok = $("license-ok");
-    ok.textContent = res.pro_build
-      ? `License valid — welcome, ${res.license.name || res.license.email}. Pro checks are unlocked.`
-      : `License valid for ${res.license.email}. You're on the Community build — ` +
-        `download the Pro binary from your purchase page to run the locked checks.`;
-    ok.hidden = false;
-    await loadMeta();
+    await api(`/api/accounts/${btn.dataset.id}`, { method: "DELETE" });
+    await loadAccounts();
+    renderAccountsList();
+    loadIdentity();
   } catch (err) {
-    const el = $("license-error");
+    const el = $("acct-error");
     el.textContent = err.message;
     el.hidden = false;
   }
+});
+
+$("copy-policy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("iam-policy-text").textContent);
+    const btn = $("copy-policy");
+    const prev = btn.textContent;
+    btn.textContent = "Copied";
+    setTimeout(() => { btn.textContent = prev; }, 1200);
+  } catch { /* clipboard permission denied — nothing to fall back to here */ }
+});
+
+$("acct-add").addEventListener("click", async () => {
+  $("acct-error").hidden = true;
+  try {
+    await api("/api/accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: $("acct-name").value,
+        account_id: $("acct-account-id").value,
+        access_key_id: $("acct-access-key").value,
+        secret_access_key: $("acct-secret-key").value,
+      }),
+    });
+    await loadAccounts();
+    renderAccountsList();
+    $("acct-name").value = "";
+    $("acct-account-id").value = "";
+    $("acct-access-key").value = "";
+    $("acct-secret-key").value = "";
+    loadIdentity();
+  } catch (err) {
+    const el = $("acct-error");
+    el.textContent = err.message;
+    el.hidden = false;
+  }
+});
+
+/* ---------- auth ---------- */
+
+function showAuth(mode) {
+  state.authMode = mode;
+  $("app-view").hidden = true;
+  $("auth-view").hidden = false;
+  const setup = mode === "setup";
+  $("auth-title").textContent = setup ? "Create your login" : "Log in";
+  $("auth-sub").hidden = !setup;
+  $("auth-confirm-label").hidden = !setup;
+  $("auth-confirm").hidden = !setup;
+  $("auth-submit").textContent = setup ? "Create login" : "Log in";
+  $("auth-error").hidden = true;
+  $("auth-password").value = "";
+  $("auth-confirm").value = "";
+}
+
+async function submitAuth() {
+  $("auth-error").hidden = true;
+  const username = $("auth-username").value.trim();
+  const password = $("auth-password").value;
+  if (state.authMode === "setup" && password !== $("auth-confirm").value) {
+    $("auth-error").textContent = "passwords don't match";
+    $("auth-error").hidden = false;
+    return;
+  }
+  const path = state.authMode === "setup" ? "/api/auth/setup" : "/api/auth/login";
+  try {
+    await api(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    $("auth-view").hidden = true;
+    await startApp();
+  } catch (err) {
+    $("auth-error").textContent = err.message;
+    $("auth-error").hidden = false;
+  }
+}
+
+$("auth-submit").addEventListener("click", submitAuth);
+$("auth-confirm").addEventListener("keydown", (e) => { if (e.key === "Enter") submitAuth(); });
+$("auth-password").addEventListener("keydown", (e) => { if (e.key === "Enter" && state.authMode !== "setup") submitAuth(); });
+
+$("logout").addEventListener("click", async () => {
+  try { await api("/api/auth/logout", { method: "POST" }); } catch { /* logging out anyway */ }
+  location.reload();
 });
 
 /* ---------- boot ---------- */
@@ -366,17 +495,26 @@ async function loadMeta() {
     }
     sel.value = state.meta.default_region;
   }
-  renderLicenseBadge();
   renderChecks(null);
 }
 
-(async function boot() {
+async function startApp() {
+  $("app-view").hidden = false;
   await loadMeta();
+  await loadAccounts();
   $("region").addEventListener("change", loadIdentity);
+  $("account").addEventListener("change", loadIdentity);
   loadIdentity();
   const scans = await loadHistory();
   if (scans && scans.length) {
     // resume a running scan, or show the latest completed one
     attachToScan(scans[0].id);
   }
+}
+
+(async function boot() {
+  const status = await api("/api/auth/status");
+  if (status.setup_required) { showAuth("setup"); return; }
+  if (!status.authenticated) { showAuth("login"); return; }
+  await startApp();
 })();
