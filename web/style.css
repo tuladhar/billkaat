@@ -262,10 +262,16 @@ code {
   padding: 10px 12px; margin-bottom: 14px;
 }
 .policy-box-head {
-  display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
+  display: flex; align-items: center; justify-content: space-between;
+  cursor: pointer; border-radius: 6px; margin: -4px; padding: 4px;
 }
+.policy-box-head:hover { background: rgba(255,255,255,.03); }
+.policy-box-head .chevron {
+  display: inline-block; margin-left: 4px; transition: transform .15s ease;
+}
+.policy-box-head[aria-expanded="true"] .chevron { transform: rotate(90deg); }
 .policy-box pre {
-  margin: 0; max-height: 180px; overflow: auto;
+  margin: 8px 0 0; max-height: 220px; overflow: auto;
   font-family: var(--mono); font-size: 11.5px; color: var(--muted);
   white-space: pre-wrap; word-break: break-word;
 }
@@ -279,6 +285,7 @@ code {
 .modal {
   background: var(--panel); border: 1px solid var(--rule); border-radius: 12px;
   padding: 24px 26px; width: min(520px, 100%);
+  max-height: min(85vh, 720px); overflow-y: auto;
 }
 .modal h3 { margin: 0 0 6px; }
 .modal-sub { color: var(--muted); font-size: 13.5px; margin: 0 0 14px; }

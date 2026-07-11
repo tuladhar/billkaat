@@ -395,7 +395,24 @@ $("accounts-list").addEventListener("click", async (e) => {
   }
 });
 
-$("copy-policy").addEventListener("click", async () => {
+function togglePolicy() {
+  const pre = $("iam-policy-text");
+  pre.hidden = !pre.hidden;
+  $("policy-toggle").setAttribute("aria-expanded", String(!pre.hidden));
+}
+$("policy-toggle").addEventListener("click", (e) => {
+  if (e.target.closest("#copy-policy")) return;
+  togglePolicy();
+});
+$("policy-toggle").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  if (e.target.closest("#copy-policy")) return;
+  e.preventDefault();
+  togglePolicy();
+});
+
+$("copy-policy").addEventListener("click", async (e) => {
+  e.stopPropagation();
   try {
     await navigator.clipboard.writeText($("iam-policy-text").textContent);
     const btn = $("copy-policy");

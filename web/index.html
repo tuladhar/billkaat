@@ -105,11 +105,11 @@
     </div>
 
     <div class="policy-box">
-      <div class="policy-box-head">
-        <span class="microlabel">required iam policy</span>
+      <div class="policy-box-head" id="policy-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="iam-policy-text">
+        <span class="microlabel">required iam policy <span class="chevron" aria-hidden="true">▸</span></span>
         <button class="btn btn-ghost btn-small" id="copy-policy" type="button">Copy</button>
       </div>
-      <pre id="iam-policy-text"></pre>
+      <pre id="iam-policy-text" hidden></pre>
     </div>
 
     <div class="banner banner-error" id="acct-error" hidden></div>
