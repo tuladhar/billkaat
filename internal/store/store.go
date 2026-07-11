@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS scans (
 	id             INTEGER PRIMARY KEY AUTOINCREMENT,
 	region         TEXT NOT NULL,
 	account_id     TEXT NOT NULL DEFAULT '',
+	account_label  TEXT NOT NULL DEFAULT '',
 	status         TEXT NOT NULL DEFAULT 'running', -- running|completed|failed
 	error          TEXT NOT NULL DEFAULT '',
 	started_at     TEXT NOT NULL,
@@ -73,6 +74,21 @@ CREATE INDEX IF NOT EXISTS idx_checks_scan   ON scan_checks(scan_id);
 CREATE TABLE IF NOT EXISTS settings (
 	key   TEXT PRIMARY KEY,
 	value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS users (
+	id            INTEGER PRIMARY KEY CHECK (id = 1), -- single-user tool: exactly one row, ever
+	username      TEXT NOT NULL,
+	password_hash TEXT NOT NULL,
+	kdf_salt      BLOB NOT NULL,
+	created_at    TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS aws_accounts (
+	id            INTEGER PRIMARY KEY AUTOINCREMENT,
+	name          TEXT NOT NULL,
+	account_id    TEXT NOT NULL DEFAULT '',
+	access_key_id TEXT NOT NULL,
+	secret_enc    BLOB NOT NULL, -- AES-256-GCM, keyed off the login password — never plaintext
+	created_at    TEXT NOT NULL
 );`)
 	return err
 }
@@ -85,6 +101,7 @@ type Scan struct {
 	ID            int64   `json:"id"`
 	Region        string  `json:"region"`
 	AccountID     string  `json:"account_id"`
+	AccountLabel  string  `json:"account_label"`
 	Status        string  `json:"status"`
 	Error         string  `json:"error"`
 	StartedAt     string  `json:"started_at"`
@@ -108,9 +125,10 @@ type ScanDetail struct {
 	Findings []checks.Finding `json:"findings"`
 }
 
-func (s *Store) CreateScan(region string) (int64, error) {
+func (s *Store) CreateScan(region, accountLabel string) (int64, error) {
 	res, err := s.db.Exec(
-		`INSERT INTO scans (region, started_at) VALUES (?, ?)`, region, now())
+		`INSERT INTO scans (region, account_label, started_at) VALUES (?, ?, ?)`,
+		region, accountLabel, now())
 	if err != nil {
 		return 0, err
 	}
@@ -147,7 +165,7 @@ func (s *Store) RunningScan() (int64, error) {
 
 func (s *Store) ListScans(limit int) ([]Scan, error) {
 	rows, err := s.db.Query(`
-		SELECT id, region, account_id, status, error, started_at,
+		SELECT id, region, account_id, account_label, status, error, started_at,
 		       COALESCE(finished_at,''), total_savings, findings_count
 		FROM scans ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
@@ -157,7 +175,7 @@ func (s *Store) ListScans(limit int) ([]Scan, error) {
 	var out []Scan
 	for rows.Next() {
 		var sc Scan
-		if err := rows.Scan(&sc.ID, &sc.Region, &sc.AccountID, &sc.Status, &sc.Error,
+		if err := rows.Scan(&sc.ID, &sc.Region, &sc.AccountID, &sc.AccountLabel, &sc.Status, &sc.Error,
 			&sc.StartedAt, &sc.FinishedAt, &sc.TotalSavings, &sc.FindingsCount); err != nil {
 			return nil, err
 		}
@@ -169,10 +187,10 @@ func (s *Store) ListScans(limit int) ([]Scan, error) {
 func (s *Store) GetScan(id int64) (*ScanDetail, error) {
 	var sc Scan
 	err := s.db.QueryRow(`
-		SELECT id, region, account_id, status, error, started_at,
+		SELECT id, region, account_id, account_label, status, error, started_at,
 		       COALESCE(finished_at,''), total_savings, findings_count
 		FROM scans WHERE id = ?`, id).
-		Scan(&sc.ID, &sc.Region, &sc.AccountID, &sc.Status, &sc.Error,
+		Scan(&sc.ID, &sc.Region, &sc.AccountID, &sc.AccountLabel, &sc.Status, &sc.Error,
 			&sc.StartedAt, &sc.FinishedAt, &sc.TotalSavings, &sc.FindingsCount)
 	if err != nil {
 		return nil, err
@@ -286,5 +304,101 @@ func (s *Store) SetSetting(key, value string) error {
 
 func (s *Store) DeleteSetting(key string) error {
 	_, err := s.db.Exec(`DELETE FROM settings WHERE key = ?`, key)
+	return err
+}
+
+// ---- user (single row: this is a single-user local tool) ----
+
+type User struct {
+	Username     string
+	PasswordHash string
+	KDFSalt      []byte
+}
+
+// HasUser reports whether the one-time setup has run yet.
+func (s *Store) HasUser() (bool, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&n)
+	return n > 0, err
+}
+
+// CreateUser stores the single user row. Fails if one already exists (the
+// `id = 1` primary key collides), which is the intended guard against
+// re-running setup.
+func (s *Store) CreateUser(username, passwordHash string, kdfSalt []byte) error {
+	_, err := s.db.Exec(`
+		INSERT INTO users (id, username, password_hash, kdf_salt, created_at)
+		VALUES (1, ?, ?, ?, ?)`, username, passwordHash, kdfSalt, now())
+	return err
+}
+
+// GetUser returns the single user row, or nil if setup hasn't run yet.
+func (s *Store) GetUser() (*User, error) {
+	var u User
+	err := s.db.QueryRow(`SELECT username, password_hash, kdf_salt FROM users WHERE id = 1`).
+		Scan(&u.Username, &u.PasswordHash, &u.KDFSalt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+// ---- AWS accounts ----
+
+// AWSAccount is what the UI lists — never the decrypted secret.
+type AWSAccount struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	AccountID   string `json:"account_id"`
+	AccessKeyID string `json:"access_key_id"`
+	CreatedAt   string `json:"created_at"`
+}
+
+// CreateAWSAccount stores a new account. secretEnc must already be encrypted
+// (see internal/auth) — the store never sees a plaintext secret key.
+func (s *Store) CreateAWSAccount(name, accountID, accessKeyID string, secretEnc []byte) (int64, error) {
+	res, err := s.db.Exec(`
+		INSERT INTO aws_accounts (name, account_id, access_key_id, secret_enc, created_at)
+		VALUES (?, ?, ?, ?, ?)`, name, accountID, accessKeyID, secretEnc, now())
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (s *Store) ListAWSAccounts() ([]AWSAccount, error) {
+	rows, err := s.db.Query(`
+		SELECT id, name, account_id, access_key_id, created_at
+		FROM aws_accounts ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []AWSAccount{}
+	for rows.Next() {
+		var a AWSAccount
+		if err := rows.Scan(&a.ID, &a.Name, &a.AccountID, &a.AccessKeyID, &a.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// GetAWSAccountSecret returns what a scan needs to authenticate: the access
+// key id, the account's friendly name (for labeling the scan), and the
+// still-encrypted secret (the caller decrypts it with the session's key).
+func (s *Store) GetAWSAccountSecret(id int64) (accessKeyID, name string, secretEnc []byte, err error) {
+	err = s.db.QueryRow(`
+		SELECT access_key_id, name, secret_enc FROM aws_accounts WHERE id = ?`, id).
+		Scan(&accessKeyID, &name, &secretEnc)
+	return
+}
+
+func (s *Store) DeleteAWSAccount(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM aws_accounts WHERE id = ?`, id)
 	return err
 }

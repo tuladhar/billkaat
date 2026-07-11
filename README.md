@@ -14,24 +14,29 @@ make demo          # explore the UI with fake data, no AWS needed
 
 ## Quick start
 
-1. Create a read-only IAM user (or role) and attach [`iam-policy.json`](iam-policy.json).
-2. Expose credentials the usual way — env vars or `~/.aws/credentials`:
-
-   ```sh
-   export AWS_ACCESS_KEY_ID=...
-   export AWS_SECRET_ACCESS_KEY=...
-   ```
-
-3. Run it:
+1. Run it:
 
    ```sh
    go run .            # or: make build && ./bin/billkaat
    ```
 
-4. Open **http://127.0.0.1:4141**, pick a region, hit **Run health check**.
+2. Open **http://127.0.0.1:4141**. On first visit you'll be asked to create a
+   local username and password — this is a single-user, single-machine tool,
+   and that password is also what encrypts every AWS secret key you add
+   below, so a copy of `billkaat.db` is useless without it.
+3. Click **Manage accounts** and add an AWS account: a friendly name, the AWS
+   account ID, and an access key ID/secret pair. Create the IAM user with
+   *only* the policy shown in that dialog (also in
+   [`iam-policy.json`](iam-policy.json)) — never a key that can write or
+   delete anything.
+4. Pick that account and a region, hit **Run health check**.
 
 Flags: `-addr` (default `127.0.0.1:4141`), `-db` (default `billkaat.db`),
 `-workers` (default 4), `-demo`.
+
+You can add as many AWS accounts as you want and switch between them from the
+same dropdown — useful for agencies or anyone running this across several
+client accounts.
 
 ## What it checks
 
@@ -48,14 +53,16 @@ Flags: `-addr` (default `127.0.0.1:4141`), `-db` (default `billkaat.db`),
 | `elb-all-unhealthy` | LBs whose every target fails health checks | performance |
 | `sg-open-to-world` | SSH/RDP/databases open to 0.0.0.0/0 | security |
 
-### Pro (one-time license, free updates)
+### Not yet implemented
 
 EC2 & RDS rightsizing from CloudWatch data, idle NAT gateways, over-provisioned
 EBS IOPS, CloudWatch Logs retention, DynamoDB capacity mode, Lambda memory,
 S3 lifecycle & storage class, RI/Savings-Plan coverage gaps, IAM hygiene,
-public exposure audit. The Community build lists these as locked rows —
-the full catalog lives in
-[`internal/checks/pro/catalog.go`](internal/checks/pro/catalog.go).
+public exposure audit. These are listed in the UI as upcoming rows so you can
+see what's planned — the full catalog lives in
+[`internal/checks/pro/catalog.go`](internal/checks/pro/catalog.go). There is
+no paywall right now (see below) — these just don't have real implementations
+in this repo yet, aside from the `nat-idle` worked example.
 
 Savings figures are estimates from a static price table
 (`internal/checks/pricing.go`, us-east-1 rates) — their job is to size the
@@ -64,16 +71,17 @@ opportunity, not reproduce the invoice.
 ## Architecture
 
 ```
-main.go                    flags, embedded web UI, wiring
+main.go                    flags, embedded web UI + iam-policy.json, wiring
 internal/
   checks/                  Check interface, Finding model, registry, pricing
     free/                  the open-source check set (one file ≈ one check)
     pro/                   catalog + locked stubs; real impls are pro-tagged
   engine/                  worker pool, per-check progress, demo seed
-  store/                   SQLite (scans, per-check status, findings, settings)
-  server/                  JSON API + static UI, binds to localhost
-  license/                 offline Ed25519 verification
-  awsx/                    AWS SDK client bundle (read-only)
+  store/                   SQLite (scans, checks, findings, users, aws_accounts)
+  server/                  JSON API + static UI, auth + session middleware
+  auth/                    password hashing, key derivation, AES-GCM at rest
+  license/                 offline Ed25519 verification (currently unused)
+  awsx/                    AWS SDK client bundle (read-only, per-account creds)
 cmd/licensegen/            key generation + license signing CLI
 web/                       vanilla HTML/CSS/JS, embedded into the binary
 ```
@@ -82,7 +90,26 @@ Adding a check is one file: implement `Meta()` and `Run()`, call
 `checks.Register` in `init()`. The engine, storage, UI, and CSV export pick it
 up automatically.
 
+## Local login and AWS credential storage
+
+There is no cloud account, no phone-home: the username/password you create on
+first run gates the local web UI, and its password is fed through scrypt to
+derive the AES-256 key that encrypts every AWS secret access key before it's
+written to `billkaat.db` (see [`internal/auth`](internal/auth)). That key
+lives only in server memory for the life of a login — restarting the process
+or logging out forgets it, so a copy of the database file on its own decrypts
+nothing. Logging in re-derives the same key from the password, which is why
+losing the password means losing access to the stored secrets (there is no
+recovery — add the accounts again with a new login).
+
 ## How the open-core + license model works
+
+**No paywall right now.** Pro checks aren't gated behind a purchased license
+— the split below is kept in the code so a paid tier can be reintroduced
+later, but nothing in the running app currently enforces it, and the license
+UI has been removed. What actually limits the Pro list today is simpler:
+most of those checks don't have real implementations in this repo yet (see
+"Not yet implemented" above).
 
 **The split.** `internal/checks/pro/catalog.go` (public) describes every Pro
 check so the free UI can advertise them as locked rows. Real implementations

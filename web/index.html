@@ -9,14 +9,41 @@
 </head>
 <body>
 
+<div class="auth-wrap" id="auth-view" hidden>
+  <div class="auth-card">
+    <div class="brand">billkaat<span class="kaat">काट</span></div>
+    <h3 id="auth-title">Create your login</h3>
+    <p class="modal-sub" id="auth-sub">
+      This is a local, single-user tool. The username and password you set here stay on this
+      machine — they gate the web UI and their password also encrypts every AWS secret key
+      stored in <code>billkaat.db</code>, so a copy of that file is useless without it.
+    </p>
+    <label class="microlabel" for="auth-username">username</label>
+    <input id="auth-username" type="text" autocomplete="username">
+    <label class="microlabel" for="auth-password">password</label>
+    <input id="auth-password" type="password" autocomplete="current-password">
+    <label class="microlabel" id="auth-confirm-label" for="auth-confirm" hidden>confirm password</label>
+    <input id="auth-confirm" type="password" autocomplete="new-password" hidden>
+    <div class="banner banner-error" id="auth-error" hidden></div>
+    <button class="btn btn-primary" id="auth-submit" type="button">Create login</button>
+  </div>
+</div>
+
+<div id="app-view" hidden>
+
 <header class="topbar">
   <div class="brand">billkaat<span class="kaat">काट</span></div>
   <div class="top-actions">
     <label class="region-picker">
+      <span class="microlabel">aws account</span>
+      <select id="account" aria-label="AWS account"></select>
+    </label>
+    <label class="region-picker">
       <span class="microlabel">region</span>
       <select id="region" aria-label="AWS region"></select>
     </label>
-    <button id="license-badge" class="badge" type="button">COMMUNITY</button>
+    <button id="manage-accounts" class="btn btn-ghost" type="button">Manage accounts</button>
+    <button id="logout" class="badge" type="button">Log out</button>
   </div>
 </header>
 
@@ -28,7 +55,7 @@
       <div class="meter-sub" id="meter-sub">Run a health check to see what this account is leaking.</div>
     </div>
     <div class="scan-actions">
-      <button id="run" class="btn btn-primary" type="button">Run health check</button>
+      <button id="run" class="btn btn-primary" type="button" disabled>Run health check</button>
       <button id="export" class="btn btn-ghost" type="button" hidden>Export CSV</button>
       <div class="identity microlabel" id="identity"></div>
     </div>
@@ -43,15 +70,6 @@
     <div id="checks"></div>
   </section>
 
-  <section class="pro-cta" id="pro-cta" hidden>
-    <div>
-      <h3>Unlock <span id="pro-count"></span> more checks</h3>
-      <p>EC2 &amp; RDS rightsizing, idle NAT gateways, IAM hygiene, Savings&nbsp;Plan gaps and more.
-         One-time license, free updates, still 100% local.</p>
-    </div>
-    <button class="btn btn-crimson" id="pro-unlock" type="button">Enter license key</button>
-  </section>
-
   <section class="history">
     <div class="ledger-header"><h2>Past scans</h2></div>
     <div id="history" class="history-list"></div>
@@ -62,18 +80,42 @@
   local-only <span class="dot">·</span> read-only AWS access <span class="dot">·</span> nothing leaves this machine
 </footer>
 
-<div class="modal-backdrop" id="license-modal" hidden>
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="lic-title">
-    <h3 id="lic-title">Activate Pro license</h3>
-    <p class="modal-sub">Paste the license key from your purchase email.
-       Verification happens offline — the key is checked on this machine and stored in your local database.</p>
-    <textarea id="license-key" rows="4" spellcheck="false" autocomplete="off"
-      placeholder="eyJ2IjoxLCJpZCI6…"></textarea>
-    <div class="banner banner-error" id="license-error" hidden></div>
-    <div class="banner banner-ok" id="license-ok" hidden></div>
+</div>
+
+<div class="modal-backdrop" id="accounts-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="acct-title">
+    <h3 id="acct-title">AWS accounts</h3>
+    <p class="modal-sub">Each account's secret key is encrypted at rest with your login password.</p>
+
+    <div id="accounts-list" class="accounts-list"></div>
+
+    <h3 class="modal-subhead">Add an account</h3>
+    <label class="microlabel" for="acct-name">name</label>
+    <input id="acct-name" type="text" placeholder="e.g. prod, client-acme">
+    <label class="microlabel" for="acct-account-id">aws account id</label>
+    <input id="acct-account-id" type="text" placeholder="123456789012">
+    <label class="microlabel" for="acct-access-key">access key id</label>
+    <input id="acct-access-key" type="text" spellcheck="false" autocomplete="off" placeholder="AKIA…">
+    <label class="microlabel" for="acct-secret-key">secret access key</label>
+    <input id="acct-secret-key" type="password" spellcheck="false" autocomplete="off">
+
+    <div class="banner banner-warn">
+      Only ever grant <strong>read-only</strong> access. Create an IAM user with just the
+      policy below — never paste in credentials that can write or delete anything.
+    </div>
+
+    <div class="policy-box">
+      <div class="policy-box-head" id="policy-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="iam-policy-text">
+        <span class="microlabel">required iam policy <span class="chevron" aria-hidden="true">▸</span></span>
+        <button class="btn btn-ghost btn-small" id="copy-policy" type="button">Copy</button>
+      </div>
+      <pre id="iam-policy-text" hidden></pre>
+    </div>
+
+    <div class="banner banner-error" id="acct-error" hidden></div>
     <div class="modal-actions">
-      <button class="btn btn-ghost" id="lic-cancel" type="button">Close</button>
-      <button class="btn btn-crimson" id="lic-activate" type="button">Activate</button>
+      <button class="btn btn-ghost" id="acct-cancel" type="button">Close</button>
+      <button class="btn btn-primary" id="acct-add" type="button">Add account</button>
     </div>
   </div>
 </div>

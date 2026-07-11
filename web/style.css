@@ -28,6 +28,11 @@
 }
 
 * { box-sizing: border-box; }
+/* .auth-wrap / .modal-backdrop set their own `display`, which — per the CSS
+   cascade — outranks the browser's default `[hidden] { display: none }`
+   rule (any author-origin declaration beats a user-agent one). Without this,
+   toggling the `hidden` property from JS has no visual effect on them. */
+[hidden] { display: none !important; }
 html { color-scheme: dark; }
 body {
   margin: 0;
@@ -74,7 +79,6 @@ select {
   border: 1px solid var(--rule); border-radius: 999px;
   padding: 6px 12px; cursor: pointer;
 }
-.badge.pro { color: var(--crimson); border-color: var(--crimson); }
 
 /* ---------- scan panel + meter ---------- */
 .scan-panel {
@@ -156,7 +160,7 @@ select {
 .chip.passed { color: var(--credit); border-color: rgba(88,192,138,.5); }
 .chip.flagged { color: var(--amber); border-color: rgba(224,180,84,.5); }
 .chip.error { color: var(--sev-critical); border-color: rgba(242,85,90,.5); }
-.chip.pro { color: var(--crimson); border-color: rgba(229,72,77,.4); }
+.chip.soon { color: var(--muted); border-style: dashed; }
 .chip.running { color: var(--ink); border-color: var(--ink); }
 
 .spinner {
@@ -191,18 +195,6 @@ select {
 .sev-low { color: var(--sev-low); }
 .sev-info { color: var(--sev-info); }
 
-/* ---------- pro cta ---------- */
-.pro-cta {
-  margin-top: 34px;
-  background: var(--panel); border: 1px solid var(--rule);
-  border-left: 3px solid var(--crimson);
-  border-radius: 12px; padding: 20px 24px;
-  display: flex; gap: 20px; align-items: center; justify-content: space-between;
-  flex-wrap: wrap;
-}
-.pro-cta h3 { margin: 0 0 6px; font-size: 15px; }
-.pro-cta p { margin: 0; color: var(--muted); font-size: 13.5px; max-width: 56ch; }
-
 /* ---------- history ---------- */
 .history-list { border-top: 1px solid var(--rule); }
 .history-row {
@@ -218,6 +210,72 @@ select {
 .history-empty { color: var(--muted); font-size: 13.5px; padding: 14px 10px; }
 .history-failed { color: var(--sev-critical); }
 
+/* ---------- forms (auth + accounts) ---------- */
+input[type="text"], input[type="password"] {
+  width: 100%; box-sizing: border-box;
+  background: var(--panel-2); color: var(--ink);
+  border: 1px solid var(--rule); border-radius: 8px;
+  font-family: var(--mono); font-size: 13.5px; padding: 10px 12px;
+  margin: 6px 0 14px;
+}
+input[type="text"]:focus, input[type="password"]:focus {
+  outline: 2px solid var(--crimson); outline-offset: 1px;
+}
+label.microlabel { display: block; margin-top: 2px; }
+
+/* ---------- auth screen ---------- */
+.auth-wrap {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.auth-card {
+  width: min(420px, 100%);
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 12px;
+  padding: 28px 26px;
+}
+.auth-card .brand { margin-bottom: 16px; }
+.auth-card h3 { margin: 0 0 8px; }
+.auth-card .btn { width: 100%; margin-top: 6px; }
+code {
+  font-family: var(--mono); background: var(--panel-2);
+  padding: 1px 5px; border-radius: 4px; font-size: .95em;
+}
+
+/* ---------- accounts modal ---------- */
+.modal-subhead {
+  font-size: 13px; margin: 20px 0 4px; padding-top: 14px;
+  border-top: 1px dashed var(--rule);
+}
+.accounts-list { margin-bottom: 4px; }
+.account-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid var(--rule);
+}
+.btn-small { padding: 6px 10px; font-size: 12px; }
+.banner-warn {
+  background: rgba(224, 180, 84, .1); border: 1px solid rgba(224, 180, 84, .45);
+  color: var(--amber); margin: 4px 0 14px;
+  border-radius: 8px; padding: 10px 14px; font-size: 13px; font-family: var(--mono);
+}
+.policy-box {
+  background: var(--panel-2); border: 1px solid var(--rule); border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 14px;
+}
+.policy-box-head {
+  display: flex; align-items: center; justify-content: space-between;
+  cursor: pointer; border-radius: 6px; margin: -4px; padding: 4px;
+}
+.policy-box-head:hover { background: rgba(255,255,255,.03); }
+.policy-box-head .chevron {
+  display: inline-block; margin-left: 4px; transition: transform .15s ease;
+}
+.policy-box-head[aria-expanded="true"] .chevron { transform: rotate(90deg); }
+.policy-box pre {
+  margin: 8px 0 0; max-height: 220px; overflow: auto;
+  font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+  white-space: pre-wrap; word-break: break-word;
+}
+
 /* ---------- modal ---------- */
 .modal-backdrop {
   position: fixed; inset: 0; background: rgba(7, 10, 18, .72);
@@ -227,6 +285,7 @@ select {
 .modal {
   background: var(--panel); border: 1px solid var(--rule); border-radius: 12px;
   padding: 24px 26px; width: min(520px, 100%);
+  max-height: min(85vh, 720px); overflow-y: auto;
 }
 .modal h3 { margin: 0 0 6px; }
 .modal-sub { color: var(--muted); font-size: 13.5px; margin: 0 0 14px; }
