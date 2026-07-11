@@ -28,6 +28,11 @@
 }
 
 * { box-sizing: border-box; }
+/* .auth-wrap / .modal-backdrop set their own `display`, which — per the CSS
+   cascade — outranks the browser's default `[hidden] { display: none }`
+   rule (any author-origin declaration beats a user-agent one). Without this,
+   toggling the `hidden` property from JS has no visual effect on them. */
+[hidden] { display: none !important; }
 html { color-scheme: dark; }
 body {
   margin: 0;
